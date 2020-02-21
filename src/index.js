@@ -48,7 +48,7 @@ async function fetchAvisSituation() {
     shouldReplaceFile: () => true,
     filename: `${utils.formatDate(
       new Date()
-    )}_polemploi_Dernier_Avis_De_Situation.pdf`,
+    )}_polemploi_Dernier avis de situation.pdf`,
     vendorRef: 'AVIS_DE_SITUATION'
   }
 }
