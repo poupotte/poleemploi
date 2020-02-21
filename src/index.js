@@ -1,135 +1,243 @@
-const {
-  BaseKonnector,
-  requestFactory,
-  signin,
-  scrape,
-  saveBills,
-  log,
-  utils
-} = require('cozy-konnector-libs')
-const request = requestFactory({
-  // The debug mode shows all the details about HTTP requests and responses. Very useful for
-  // debugging but very verbose. This is why it is commented out by default
-  // debug: true,
-  // Activates [cheerio](https://cheerio.js.org/) parsing on each page
-  cheerio: true,
-  // If cheerio is activated do not forget to deactivate json parsing (which is activated by
-  // default in cozy-konnector-libs
-  json: false,
-  // This allows request-promise to keep cookies between requests
-  jar: true
+const { BaseKonnector, utils, errors, log } = require('cozy-konnector-libs')
+const got = require('../libs/got').extend({
+  decompress: false
 })
-
-const VENDOR = 'template'
-const baseUrl = 'http://books.toscrape.com'
+const courrierUrl = 'https://courriers.pole-emploi.fr'
+const parse = require('date-fns/parse')
+const subYears = require('date-fns/subYears')
+const format = require('date-fns/format')
 
 module.exports = new BaseKonnector(start)
 
-// The start function is run by the BaseKonnector instance only when it got all the account
-// information (fields). When you run this connector yourself in "standalone" mode or "dev" mode,
-// the account information come from ./konnector-dev-config.json file
-// cozyParameters are static parameters, independents from the account. Most often, it can be a
-// secret api key.
-async function start(fields, cozyParameters) {
-  log('info', 'Authenticating ...')
-  if (cozyParameters) log('debug', 'Found COZY_PARAMETERS')
-  await authenticate(fields.login, fields.password)
-  log('info', 'Successfully logged in')
-  // The BaseKonnector instance expects a Promise as return of the function
-  log('info', 'Fetching the list of documents')
-  const $ = await request(`${baseUrl}/index.html`)
-  // cheerio (https://cheerio.js.org/) uses the same api as jQuery (http://jquery.com/)
-  log('info', 'Parsing list of documents')
-  const documents = await parseDocuments($)
+async function start(fields) {
+  await authenticate(fields)
 
-  // Here we use the saveBills function even if what we fetch are not bills,
-  // but this is the most common case in connectors
-  log('info', 'Saving data to Cozy')
-  await saveBills(documents, fields, {
-    // This is a bank identifier which will be used to link bills to bank operations. These
-    // identifiers should be at least a word found in the title of a bank operation related to this
-    // bill. It is not case sensitive.
-    identifiers: ['books'],
-    sourceAccount: this.accountId,
-    sourceAccountIdentifier: fields.login
+  const docs = await fetchCourriers()
+
+  await this.saveBills(docs, fields, {
+    fileIdAttributes: ['vendorRef'],
+    linkBankOperations: false,
+    contentType: 'application/pdf',
+    processPdf: parseAmountAndDate
   })
 }
 
-// This shows authentication using the [signin function](https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#module_signin)
-// even if this in another domain here, but it works as an example
-function authenticate(username, password) {
-  return signin({
-    url: `http://quotes.toscrape.com/login`,
-    formSelector: 'form',
-    formData: { username, password },
-    // The validate function will check if the login request was a success. Every website has a
-    // different way to respond: HTTP status code, error message in HTML ($), HTTP redirection
-    // (fullResponse.request.uri.href)...
-    validate: (statusCode, $, fullResponse) => {
-      log(
-        'debug',
-        fullResponse.request.uri.href,
-        'not used here but should be useful for other connectors'
+async function fetchCourriers() {
+  try {
+    let resp = await got(
+      'https://authentification-candidat.pole-emploi.fr/compte/redirigervers?url=https://courriers.pole-emploi.fr/courriersweb/acces/AccesCourriers'
+    )
+
+    resp = await got.post(resp.$('form').attr('action'), {
+      form: resp.getFormData('form')
+    })
+
+    // get a maximum of files (minus 10 years)
+    const form = resp.getFormData('form#formulaire')
+    form.dateDebut = format(
+      subYears(parse(form.dateDebut, 'dd/MM/yyyy', new Date()), 10),
+      'dd/MM/yyyy'
+    )
+
+    resp = await got.post(
+      courrierUrl + resp.$('form#formulaire').attr('action'),
+      { form }
+    )
+
+    let docs = []
+    while (resp) {
+      const result = await getPage(resp)
+      resp = result.nextResp
+      docs = [...docs, ...result.docs]
+    }
+    return docs
+  } catch (err) {
+    if (err.response.statusCode === 500) {
+      log('error', err.message)
+      throw new Error(errors.VENDOR_DOWN)
+    } else {
+      throw err
+    }
+  }
+}
+
+async function getPage(resp) {
+  const fetchFile = async doc =>
+    got.stream(courrierUrl + (await got(doc.url)).$('iframe').attr('src'))
+  const docs = resp
+    .scrape(
+      {
+        date: {
+          sel: '.date',
+          parse: date =>
+            date
+              .split('/')
+              .reverse()
+              .join('-')
+        },
+        type: '.avisPaie',
+        url: {
+          sel: '.Telechar a',
+          attr: 'href',
+          parse: href => `${courrierUrl}${href}`
+        },
+        vendorRef: {
+          sel: '.Telechar a',
+          attr: 'href',
+          parse: href => href.split('/').pop()
+        }
+      },
+      'table tbody tr'
+    )
+    .map(doc => ({
+      ...doc,
+      fetchFile,
+      filename: `${utils.formatDate(doc.date)}_polemploi_${doc.type}_${
+        doc.vendorRef
+      }.pdf`,
+      vendor: 'Pole Emploi'
+    }))
+
+  const nextLink =
+    '/courriersweb/mescourriers.bloclistecourriers.numerotation.boutonnext'
+  const hasNext = Boolean(resp.$(`.pagination a[href='${nextLink}']`).length)
+  let nextResp = false
+
+  if (hasNext) nextResp = await got(courrierUrl + nextLink)
+
+  return { docs, nextResp }
+}
+
+async function authenticate({ login, password }) {
+  log('debug', 'authenticating...')
+  try {
+    const state = {
+      state: randomizeString(16),
+      nonce: randomizeString(16)
+    }
+    await got(
+      'https://authentification-candidat.pole-emploi.fr/connexion/oauth2/authorize',
+      {
+        searchParams: {
+          realm: '/individu',
+          response_type: 'id_token token',
+          scope:
+            'openid idRci profile contexteAuthentification email courrier notifications etatcivil logW individu pilote nomenclature coordonnees navigation reclamation prdvl idIdentiteExterne pole_emploi suggestions actu application_USG_PN073-tdbcandidat_6408B42F17FC872440D4FF01BA6BAB16999CD903772C528808D1E6FA2B585CF2',
+          client_id:
+            'USG_PN073-tdbcandidat_6408B42F17FC872440D4FF01BA6BAB16999CD903772C528808D1E6FA2B585CF2',
+          ...state
+        }
+      }
+    )
+
+    let authBody = await got
+      .post(
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
+        {
+          searchParams: {
+            realm: '/individu'
+          }
+        }
       )
-      // The login in toscrape.com always works except when no password is set
-      if ($(`a[href='/logout']`).length === 1) {
-        return true
-      } else {
-        // cozy-konnector-libs has its own logging function which format these logs with colors in
-        // standalone and dev mode and as JSON in production mode
-        log('error', $('.error').text())
-        return false
-      }
-    }
-  })
+      .json()
+
+    authBody.callbacks[0].input[0].value = login
+
+    authBody = await got
+      .post(
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
+        {
+          json: authBody
+        }
+      )
+      .json()
+
+    authBody.callbacks[1].input[0].value = password
+    authBody = await got
+      .post(
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
+        {
+          json: authBody
+        }
+      )
+      .json()
+
+    await got.defaults.options.cookieJar.setCookie(
+      `idutkes=${authBody.tokenId}`,
+      'https://authentification-candidat.pole-emploi.fr',
+      {}
+    )
+    await got
+      .post(
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/users?_action=idFromSession&realm=/individu'
+      )
+      .json()
+  } catch (err) {
+    if (err.response.statusCode === 401) throw new Error(errors.LOGIN_FAILED)
+    else throw err
+  }
 }
 
-// The goal of this function is to parse a HTML page wrapped by a cheerio instance
-// and return an array of JS objects which will be saved to the cozy by saveBills
-// (https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#savebills)
-function parseDocuments($) {
-  // You can find documentation about the scrape function here:
-  // https://github.com/konnectors/libs/blob/master/packages/cozy-konnector-libs/docs/api.md#scrape
-  const docs = scrape(
-    $,
-    {
-      title: {
-        sel: 'h3 a',
-        attr: 'title'
-      },
-      amount: {
-        sel: '.price_color',
-        parse: normalizePrice
-      },
-      fileurl: {
-        sel: 'img',
-        attr: 'src',
-        parse: src => `${baseUrl}/${src}`
-      }
-    },
-    'article'
-  )
-  return docs.map(doc => ({
-    ...doc,
-    // The saveBills function needs a date field
-    // even if it is a little artificial here (these are not real bills)
-    date: new Date(),
-    currency: 'EUR',
-    filename: `${utils.formatDate(new Date())}_${VENDOR}_${doc.amount.toFixed(
-      2
-    )}EUR${doc.vendorRef ? '_' + doc.vendorRef : ''}.jpg`,
-    vendor: VENDOR,
-    metadata: {
-      // It can be interesting to add the date of import. This is not mandatory but may be
-      // useful for debugging or data migration
-      importDate: new Date(),
-      // Document version, useful for migration after change of document structure
-      version: 1
-    }
-  }))
+// alg taken directly form the website
+function randomizeString(e) {
+  for (
+    var t = [''],
+      n = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-',
+      r = 0;
+    r < e;
+    r++
+  ) {
+    t.push(n[Math.floor(Math.random() * n.length)])
+  }
+  return t.join('')
 }
 
-// Convert a price string to a float
-function normalizePrice(price) {
-  return parseFloat(price.replace('£', '').trim())
+function parseAmountAndDate(entry, text) {
+  // at the moment, only 'Relevés de situation' have bills data ignore any other file
+  if (entry.type !== 'Relevé de situation') {
+    entry.__ignore = true
+    return entry
+  }
+
+  // find date and amount lines in pdf
+  const lines = text.split('\n')
+  const dateLines = lines
+    .map(line => line.match(/^REGLEMENT\sDU\s(.*)$/))
+    .filter(Boolean)
+  if (dateLines.length === 0) {
+    log('warn', `found no paiment dates`)
+  }
+  const amountLines = lines
+    .map(line => line.match(/^Règlement de (.*) euros par (.*)$/))
+    .filter(Boolean)
+  if (amountLines.length === 0) {
+    log('warn', `found no paiment amounts`)
+  }
+
+  // generate bills data from it. We can multiple bills associated to one file
+  const bills = []
+  for (let i = 0; i < dateLines.length; i++) {
+    const date = parse(dateLines[i].slice(1, 2).pop(), 'dd/MM/yyyy', new Date())
+    const amount = parseFloat(
+      amountLines[i]
+        .slice(1, 2)
+        .pop()
+        .replace(',', '.')
+    )
+    if (date && amount) {
+      bills.push({ ...entry, date, amount, isRefund: true })
+    }
+  }
+
+  if (bills.length === 0) {
+    // first bills is associated to the current entry
+    entry.__ignore = true
+    log('warn', 'could not find any date or amount in this document')
+  } else {
+    // next bills will generate a new entry associated to the same file
+    Object.assign(entry, bills.shift())
+    return bills
+  }
+
+  return entry
 }
