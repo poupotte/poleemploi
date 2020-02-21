@@ -1,10 +1,10 @@
 {
-  "name": "cozy-konnector-template",
+  "name": "cozy-konnector-poleemploi",
   "version": "1.0.0",
   "description": "",
   "repository": {
     "type": "git",
-    "url": "git@github.com:konnectors/template.git"
+    "url": "git@github.com:konnectors/poleemploi.git"
   },
   "keywords": [],
   "author": "Cozy Cloud",
@@ -37,18 +37,24 @@
     "travisDeployKey": "./bin/generate_travis_deploy_key"
   },
   "dependencies": {
-    "cozy-konnector-libs": "4.32.4"
+    "cheerio": "1.0.0-rc.3",
+    "cozy-konnector-libs": "4.33.0",
+    "date-fns": "2.9.0",
+    "got": "10.6.0",
+    "pdfjs-dist": "2.2.228"
   },
   "devDependencies": {
     "copy-webpack-plugin": "5.1.1",
-    "cozy-app-publish": "0.20.2",
-    "cozy-jobs-cli": "1.11.2",
-    "eslint-config-cozy-app": "1.4.0",
+    "cozy-app-publish": "0.21.0",
+    "cozy-jobs-cli": "1.12.0",
+    "debug": "4.1.1",
+    "eslint-config-cozy-app": "1.5.0",
     "git-directory-deploy": "1.5.1",
-    "husky": "4.2.1",
+    "husky": "4.2.3",
     "konitor": "0.10.3",
+    "pretty": "2.0.0",
     "svgo": "1.3.2",
-    "webpack": "4.41.5",
-    "webpack-cli": "3.3.10"
+    "webpack": "4.41.6",
+    "webpack-cli": "3.3.11"
   }
 }
