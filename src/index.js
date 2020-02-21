@@ -3,15 +3,19 @@ const got = require('../libs/got').extend({
   decompress: false
 })
 const courrierUrl = 'https://courriers.pole-emploi.fr'
-const parse = require('date-fns/parse')
-const subYears = require('date-fns/subYears')
-const format = require('date-fns/format')
+const candidatUrl = 'https://candidat.pole-emploi.fr'
+const { parse, subYears, format } = require('date-fns')
 
 module.exports = new BaseKonnector(start)
 
 async function start(fields) {
   await authenticate(fields)
 
+  const avisSituation = await fetchAvisSituation()
+  await this.saveFiles([avisSituation], fields, {
+    contentType: true,
+    fileIdAttributes: ['vendorRef']
+  })
   const docs = await fetchCourriers()
 
   await this.saveBills(docs, fields, {
@@ -20,6 +24,33 @@ async function start(fields) {
     contentType: 'application/pdf',
     processPdf: parseAmountAndDate
   })
+}
+
+async function fetchAvisSituation() {
+  return {
+    fetchFile: async () => {
+      let resp = await got(
+        'https://candidat.pole-emploi.fr/candidat/situationadministrative/suiviinscription/attestation/mesattestations/true'
+      )
+      resp = await got.post(
+        candidatUrl + resp.$('#Formulaire').attr('action'),
+        {
+          form: {
+            ...resp.getFormData('#Formulaire'),
+            attestationsSelectModel: 'AVIS_DE_SITUATION'
+          }
+        }
+      )
+
+      const link = candidatUrl + resp.$('.pdf-fat-link').attr('href')
+      return got.stream(link)
+    },
+    shouldReplaceFile: () => true,
+    filename: `${utils.formatDate(
+      new Date()
+    )}_polemploi_Dernier_Avis_De_Situation.pdf`,
+    vendorRef: 'AVIS_DE_SITUATION'
+  }
 }
 
 async function fetchCourriers() {
@@ -52,7 +83,7 @@ async function fetchCourriers() {
     }
     return docs
   } catch (err) {
-    if (err.response.statusCode === 500) {
+    if (err.response && err.response.statusCode === 500) {
       log('error', err.message)
       throw new Error(errors.VENDOR_DOWN)
     } else {
@@ -173,7 +204,8 @@ async function authenticate({ login, password }) {
       )
       .json()
   } catch (err) {
-    if (err.response.statusCode === 401) throw new Error(errors.LOGIN_FAILED)
+    if (err.response && err.response.statusCode === 401)
+      throw new Error(errors.LOGIN_FAILED)
     else throw err
   }
 }
