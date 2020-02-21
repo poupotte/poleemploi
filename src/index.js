@@ -1,3 +1,7 @@
+process.env.SENTRY_DSN =
+  process.env.SENTRY_DSN ||
+  'https://be591cf27cd348eeabc4d56b14bf12ac@sentry.cozycloud.cc/132'
+
 const { BaseKonnector, utils, errors, log } = require('cozy-konnector-libs')
 const got = require('../libs/got').extend({
   decompress: false
