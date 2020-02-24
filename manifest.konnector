@@ -16,6 +16,9 @@
     "password": {
       "type": "password"
     },
+    "zipcode": {
+      "type": "text"
+    },
     "advancedFields": {
       "folderPath": {
         "advanced": true,
