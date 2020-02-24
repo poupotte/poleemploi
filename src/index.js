@@ -22,12 +22,24 @@ async function start(fields) {
   })
   const docs = await fetchCourriers()
 
-  await this.saveBills(docs, fields, {
+  const filesWithBills = docs.filter(isFileWithBills)
+  if (filesWithBills.length) {
+    await this.saveBills(filesWithBills, fields, {
+      fileIdAttributes: ['vendorRef'],
+      linkBankOperations: false,
+      contentType: 'application/pdf',
+      processPdf: parseAmountAndDate
+    })
+  }
+
+  await this.saveFiles(docs, fields, {
     fileIdAttributes: ['vendorRef'],
-    linkBankOperations: false,
-    contentType: 'application/pdf',
-    processPdf: parseAmountAndDate
+    contentType: 'application/pdf'
   })
+}
+
+function isFileWithBills(doc) {
+  return doc.type === 'Relevé de situation'
 }
 
 async function fetchAvisSituation() {
@@ -47,6 +59,10 @@ async function fetchAvisSituation() {
       )
 
       const link = candidatUrl + resp.$('.pdf-fat-link').attr('href')
+      const test = await got.head(link)
+      if (test.url.includes('attestation/erreur')) {
+        throw new Error('No avis de situation to fetch')
+      }
       return got.stream(link)
     },
     shouldReplaceFile: () => true,
@@ -143,7 +159,7 @@ async function getPage(resp) {
   return { docs, nextResp }
 }
 
-async function authenticate({ login, password }) {
+async function authenticate({ login, password, zipcode }) {
   log('debug', 'authenticating...')
   try {
     const state = {
@@ -188,6 +204,17 @@ async function authenticate({ login, password }) {
       .json()
 
     authBody.callbacks[1].input[0].value = password
+
+    const zipCodeCb = authBody.callbacks.find(cb =>
+      cb.output[0].value.includes('Code postal')
+    )
+    if (zipCodeCb) {
+      if (!zipcode) {
+        log('error', 'zipcode is missing and it is needed by pole emploi')
+        throw new Error(errors.LOGIN_FAILED)
+      }
+      zipCodeCb.input[0].value = zipcode
+    }
     authBody = await got
       .post(
         'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
@@ -229,12 +256,6 @@ function randomizeString(e) {
 }
 
 function parseAmountAndDate(entry, text) {
-  // at the moment, only 'Relevés de situation' have bills data ignore any other file
-  if (entry.type !== 'Relevé de situation') {
-    entry.__ignore = true
-    return entry
-  }
-
   // find date and amount lines in pdf
   const lines = text.split('\n')
   const dateLines = lines
