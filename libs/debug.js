@@ -1,5 +1,6 @@
 const pretty = require('pretty')
 const debug = require('debug')
+const jsonColorizer = require('json-colorizer')
 const gotDebug = require('got').extend({
   hooks: {
     beforeRequest: [logRequest],
@@ -9,7 +10,18 @@ const gotDebug = require('got').extend({
 
 function logRequest(options) {
   const d = debug('gotRequest')
+  const dBody = debug('gotBody')
   d('--> %s: %s', options.method, options.url)
+  if (options.json) {
+    try {
+      dBody(
+        '--> body: %s',
+        jsonColorizer(JSON.stringify(options.json, null, 2))
+      )
+    } catch (err) {
+      dBody('--> body parsing error %s', err.message)
+    }
+  }
 }
 
 function logResponse(response) {
@@ -23,15 +35,15 @@ function logResponse(response) {
   ) {
     try {
       const json = JSON.parse(response.body)
-      dBody('body: %O', json)
+      dBody('<-- body: %s', jsonColorizer(JSON.stringify(json, null, 2)))
     } catch (err) {
-      dBody('body parsing error %s', err.message)
+      dBody('<-- body parsing error %s', err.message)
     }
   } else if (
     response.headers['content-type'] &&
     response.headers['content-type'].includes('html')
   ) {
-    dBody('body: %s', pretty(response.body, { ocd: true }))
+    dBody('<-- body: %s', pretty(response.body, { ocd: true }))
   }
   return response
 }
