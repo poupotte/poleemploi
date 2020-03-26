@@ -1,6 +1,6 @@
 {
   "version": "1.0.1",
-  "name": "Pole Emploi",
+  "name": "Pôle Emploi",
   "type": "konnector",
   "language": "node",
   "icon": "icon.svg",
