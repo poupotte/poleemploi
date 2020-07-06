@@ -42,7 +42,7 @@
     "date-fns": "2.14.0",
     "got": "11.1.4",
     "json-colorizer": "2.2.2",
-    "pdfjs-dist": "2.3.200"
+    "pdfjs-dist": "2.4.456"
   },
   "devDependencies": {
     "copy-webpack-plugin": "6.0.1",
