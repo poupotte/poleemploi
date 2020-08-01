@@ -40,14 +40,14 @@
     "cheerio": "1.0.0-rc.3",
     "cozy-konnector-libs": "4.34.4",
     "date-fns": "2.14.0",
-    "got": "11.1.4",
+    "got": "10",
     "json-colorizer": "2.2.2",
     "pdfjs-dist": "2.3.200"
   },
   "devDependencies": {
     "copy-webpack-plugin": "6.0.1",
     "cozy-app-publish": "0.22.3",
-    "cozy-jobs-cli": "1.13.5",
+    "cozy-jobs-cli": "1.13.6",
     "debug": "4.1.1",
     "eslint-config-cozy-app": "1.5.0",
     "git-directory-deploy": "1.5.1",
