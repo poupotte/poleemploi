@@ -46,20 +46,18 @@ function isFileWithBills(doc) {
 async function fetchAvisSituation() {
   return {
     fetchFile: async () => {
-      let resp = await got(
+      // Mandatory requests to activate the download of Avis_de_situation
+      const resp = await got(
         'https://candidat.pole-emploi.fr/candidat/situationadministrative/suiviinscription/attestation/mesattestations/true'
       )
-      resp = await got.post(
-        candidatUrl + resp.$('#Formulaire').attr('action'),
-        {
-          form: {
-            ...resp.getFormData('#Formulaire'),
-            attestationsSelectModel: 'AVIS_DE_SITUATION'
-          }
+      await got.post(candidatUrl + resp.$('#Formulaire').attr('action'), {
+        form: {
+          ...resp.getFormData('#Formulaire'),
+          attestationsSelectModel: 'AVIS_DE_SITUATION'
         }
-      )
+      })
 
-      const link = candidatUrl + resp.$('.pdf-fat-link').attr('href')
+      const link = `${candidatUrl}/candidat/situationadministrative/suiviinscription/attestation/recapitulatif:telechargerattestationpdf`
       const test = await got.head(link)
       if (test.url.includes('attestation/erreur')) {
         throw new Error('No avis de situation to fetch')
