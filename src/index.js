@@ -3,7 +3,8 @@ process.env.SENTRY_DSN =
   'https://be591cf27cd348eeabc4d56b14bf12ac@sentry.cozycloud.cc/132'
 
 const { BaseKonnector, utils, errors, log } = require('cozy-konnector-libs')
-const got = require('../libs/got').extend({
+const firstGot = require('../libs/got')
+const got = firstGot.extend({
   decompress: false
 })
 const courrierUrl = 'https://courriers.pole-emploi.fr'
@@ -45,20 +46,18 @@ function isFileWithBills(doc) {
 async function fetchAvisSituation() {
   return {
     fetchFile: async () => {
-      let resp = await got(
+      // Mandatory requests to activate the download of Avis_de_situation
+      const resp = await got(
         'https://candidat.pole-emploi.fr/candidat/situationadministrative/suiviinscription/attestation/mesattestations/true'
       )
-      resp = await got.post(
-        candidatUrl + resp.$('#Formulaire').attr('action'),
-        {
-          form: {
-            ...resp.getFormData('#Formulaire'),
-            attestationsSelectModel: 'AVIS_DE_SITUATION'
-          }
+      await got.post(candidatUrl + resp.$('#Formulaire').attr('action'), {
+        form: {
+          ...resp.getFormData('#Formulaire'),
+          attestationsSelectModel: 'AVIS_DE_SITUATION'
         }
-      )
+      })
 
-      const link = candidatUrl + resp.$('.pdf-fat-link').attr('href')
+      const link = `${candidatUrl}/candidat/situationadministrative/suiviinscription/attestation/recapitulatif:telechargerattestationpdf`
       const test = await got.head(link)
       if (test.url.includes('attestation/erreur')) {
         throw new Error('No avis de situation to fetch')
@@ -183,10 +182,10 @@ async function authenticate({ login, password, zipcode }) {
 
     let authBody = await got
       .post(
-        'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/realms/root/realms/individu/authenticate',
         {
-          searchParams: {
-            realm: '/individu'
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
           }
         }
       )
@@ -198,7 +197,10 @@ async function authenticate({ login, password, zipcode }) {
       .post(
         'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
         {
-          json: authBody
+          json: authBody,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
         }
       )
       .json()
@@ -219,7 +221,10 @@ async function authenticate({ login, password, zipcode }) {
       .post(
         'https://authentification-candidat.pole-emploi.fr/connexion/json/authenticate',
         {
-          json: authBody
+          json: authBody,
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
         }
       )
       .json()
@@ -231,7 +236,12 @@ async function authenticate({ login, password, zipcode }) {
     )
     await got
       .post(
-        'https://authentification-candidat.pole-emploi.fr/connexion/json/users?_action=idFromSession&realm=/individu'
+        'https://authentification-candidat.pole-emploi.fr/connexion/json/users?_action=idFromSession&realm=/individu',
+        {
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        }
       )
       .json()
   } catch (err) {

@@ -11,7 +11,9 @@ const gotDebug = require('got').extend({
 function logRequest(options) {
   const d = debug('gotRequest')
   const dBody = debug('gotBody')
+  const dHeader = debug('gotHeader')
   d('--> %s: %s', options.method, options.url)
+  dHeader('--> headers: %O', options.headers)
   if (options.json) {
     try {
       dBody(
