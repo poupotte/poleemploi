@@ -39,7 +39,7 @@
   "dependencies": {
     "cheerio": "1.0.0-rc.3",
     "cozy-konnector-libs": "4.34.5",
-    "date-fns": "2.14.0",
+    "date-fns": "2.15.0",
     "got": "10",
     "json-colorizer": "2.2.2",
     "pdfjs-dist": "2.4.456"
@@ -55,7 +55,7 @@
     "konitor": "0.10.3",
     "pretty": "2.0.0",
     "svgo": "1.3.2",
-    "webpack": "4.43.0",
+    "webpack": "4.44.1",
     "webpack-cli": "3.3.12"
   }
 }
