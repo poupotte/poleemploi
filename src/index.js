@@ -7,9 +7,9 @@ const firstGot = require('../libs/got')
 const got = firstGot.extend({
   decompress: false
 })
-// const courrierUrl = 'https://courriers.pole-emploi.fr'
+const courrierUrl = 'https://courriers.pole-emploi.fr'
 const candidatUrl = 'https://candidat.pole-emploi.fr'
-// const { parse, subYears, format } = require('date-fns')
+const { parse, subYears, format } = require('date-fns')
 
 module.exports = new BaseKonnector(start)
 
@@ -21,29 +21,31 @@ async function start(fields) {
     contentType: true,
     fileIdAttributes: ['vendorRef']
   })
-  // const docs = await fetchCourriers()
 
-  // const filesWithBills = docs.filter(isFileWithBills)
-  // if (filesWithBills.length) {
-  //   log('info', 'files with bills')
-  //   await this.saveBills(filesWithBills, fields, {
-  //     fileIdAttributes: ['vendorRef'],
-  //     linkBankOperations: false,
-  //     contentType: 'application/pdf',
-  //     processPdf: parseAmountAndDate
-  //   })
-  // }
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
 
-  // log('info', 'courriers')
-  // await this.saveFiles(docs, fields, {
-  //   fileIdAttributes: ['vendorRef'],
-  //   contentType: 'application/pdf'
-  // })
+  const docs = await fetchCourriers()
+
+  const filesWithBills = docs.filter(isFileWithBills)
+  if (filesWithBills.length) {
+    log('info', 'files with bills')
+    await this.saveBills(filesWithBills, fields, {
+      fileIdAttributes: ['vendorRef'],
+      linkBankOperations: false,
+      contentType: 'application/pdf',
+      processPdf: parseAmountAndDate
+    })
+  }
+
+  await this.saveFiles(docs, fields, {
+    fileIdAttributes: ['vendorRef'],
+    contentType: 'application/pdf'
+  })
 }
 
-// function isFileWithBills(doc) {
-//   return doc.type === 'Relevé de situation'
-// }
+function isFileWithBills(doc) {
+  return doc.type === 'Relevé de situation'
+}
 
 async function fetchAvisSituation() {
   return {
@@ -74,91 +76,91 @@ async function fetchAvisSituation() {
   }
 }
 
-// async function fetchCourriers() {
-//   try {
-//     let resp = await got(
-//       'https://authentification-candidat.pole-emploi.fr/compte/redirigervers?url=https://courriers.pole-emploi.fr/courriersweb/acces/AccesCourriers'
-//     )
+async function fetchCourriers() {
+  try {
+    let resp = await got(
+      'https://authentification-candidat.pole-emploi.fr/compte/redirigervers?url=https://courriers.pole-emploi.fr/courriersweb/acces/AccesCourriers'
+    )
 
-//     resp = await got.post(resp.$('form').attr('action'), {
-//       form: resp.getFormData('form')
-//     })
+    resp = await got.post(resp.$('form').attr('action'), {
+      form: resp.getFormData('form')
+    })
 
-//     // get a maximum of files (minus 10 years)
-//     const form = resp.getFormData('form#formulaire')
-//     form.dateDebut = format(
-//       subYears(parse(form.dateDebut, 'dd/MM/yyyy', new Date()), 10),
-//       'dd/MM/yyyy'
-//     )
+    // get a maximum of files (minus 10 years)
+    const form = resp.getFormData('form#formulaire')
+    form.dateDebut = format(
+      subYears(parse(form.dateDebut, 'dd/MM/yyyy', new Date()), 10),
+      'dd/MM/yyyy'
+    )
 
-//     resp = await got.post(
-//       courrierUrl + resp.$('form#formulaire').attr('action'),
-//       { form }
-//     )
+    resp = await got.post(
+      courrierUrl + resp.$('form#formulaire').attr('action'),
+      { form }
+    )
 
-//     let docs = []
-//     while (resp) {
-//       const result = await getPage(resp)
-//       resp = result.nextResp
-//       docs = [...docs, ...result.docs]
-//     }
-//     return docs
-//   } catch (err) {
-//     if (err.response && err.response.statusCode === 500) {
-//       log('error', err.message)
-//       throw new Error(errors.VENDOR_DOWN)
-//     } else {
-//       throw err
-//     }
-//   }
-// }
+    let docs = []
+    while (resp) {
+      const result = await getPage(resp)
+      resp = result.nextResp
+      docs = [...docs, ...result.docs]
+    }
+    return docs
+  } catch (err) {
+    if (err.response && err.response.statusCode === 500) {
+      log('error', err.message)
+      throw new Error(errors.VENDOR_DOWN)
+    } else {
+      throw err
+    }
+  }
+}
 
-// async function getPage(resp) {
-//   const fetchFile = async doc =>
-//     got.stream(courrierUrl + (await got(doc.url)).$('iframe').attr('src'))
-//   const docs = resp
-//     .scrape(
-//       {
-//         date: {
-//           sel: '.date',
-//           parse: date =>
-//             date
-//               .split('/')
-//               .reverse()
-//               .join('-')
-//         },
-//         type: '.avisPaie',
-//         url: {
-//           sel: '.Telechar a',
-//           attr: 'href',
-//           parse: href => `${courrierUrl}${href}`
-//         },
-//         vendorRef: {
-//           sel: '.Telechar a',
-//           attr: 'href',
-//           parse: href => href.split('/').pop()
-//         }
-//       },
-//       'table tbody tr'
-//     )
-//     .map(doc => ({
-//       ...doc,
-//       fetchFile,
-//       filename: `${utils.formatDate(doc.date)}_polemploi_${doc.type}_${
-//         doc.vendorRef
-//       }.pdf`,
-//       vendor: 'Pole Emploi'
-//     }))
+async function getPage(resp) {
+  const fetchFile = async doc =>
+    got.stream(courrierUrl + (await got(doc.url)).$('iframe').attr('src'))
+  const docs = resp
+    .scrape(
+      {
+        date: {
+          sel: '.date',
+          parse: date =>
+            date
+              .split('/')
+              .reverse()
+              .join('-')
+        },
+        type: '.avisPaie',
+        url: {
+          sel: '.Telechar a',
+          attr: 'href',
+          parse: href => `${courrierUrl}${href}`
+        },
+        vendorRef: {
+          sel: '.Telechar a',
+          attr: 'href',
+          parse: href => href.split('/').pop()
+        }
+      },
+      'table tbody tr'
+    )
+    .map(doc => ({
+      ...doc,
+      fetchFile,
+      filename: `${utils.formatDate(doc.date)}_polemploi_${doc.type}_${
+        doc.vendorRef
+      }.pdf`,
+      vendor: 'Pole Emploi'
+    }))
 
-//   const nextLink =
-//     '/courriersweb/mescourriers.bloclistecourriers.numerotation.boutonnext'
-//   const hasNext = Boolean(resp.$(`.pagination a[href='${nextLink}']`).length)
-//   let nextResp = false
+  const nextLink =
+    '/courriersweb/mescourriers.bloclistecourriers.numerotation.boutonnext'
+  const hasNext = Boolean(resp.$(`.pagination a[href='${nextLink}']`).length)
+  let nextResp = false
 
-//   if (hasNext) nextResp = await got(courrierUrl + nextLink)
+  if (hasNext) nextResp = await got(courrierUrl + nextLink)
 
-//   return { docs, nextResp }
-// }
+  return { docs, nextResp }
+}
 
 async function authenticate({ login, password, zipcode }) {
   log('debug', 'authenticating...')
@@ -267,46 +269,46 @@ function randomizeString(e) {
   return t.join('')
 }
 
-// function parseAmountAndDate(entry, text) {
-//   // find date and amount lines in pdf
-//   const lines = text.split('\n')
-//   const dateLines = lines
-//     .map(line => line.match(/^REGLEMENT\sDU\s(.*)$/))
-//     .filter(Boolean)
-//   if (dateLines.length === 0) {
-//     log('warn', `found no paiment dates`)
-//   }
-//   const amountLines = lines
-//     .map(line => line.match(/^Règlement de (.*) euros par (.*)$/))
-//     .filter(Boolean)
-//   if (amountLines.length === 0) {
-//     log('warn', `found no paiment amounts`)
-//   }
+function parseAmountAndDate(entry, text) {
+  // find date and amount lines in pdf
+  const lines = text.split('\n')
+  const dateLines = lines
+    .map(line => line.match(/^REGLEMENT\sDU\s(.*)$/))
+    .filter(Boolean)
+  if (dateLines.length === 0) {
+    log('warn', `found no paiment dates`)
+  }
+  const amountLines = lines
+    .map(line => line.match(/^Règlement de (.*) euros par (.*)$/))
+    .filter(Boolean)
+  if (amountLines.length === 0) {
+    log('warn', `found no paiment amounts`)
+  }
 
-//   // generate bills data from it. We can multiple bills associated to one file
-//   const bills = []
-//   for (let i = 0; i < dateLines.length; i++) {
-//     const date = parse(dateLines[i].slice(1, 2).pop(), 'dd/MM/yyyy', new Date())
-//     const amount = parseFloat(
-//       amountLines[i]
-//         .slice(1, 2)
-//         .pop()
-//         .replace(',', '.')
-//     )
-//     if (date && amount) {
-//       bills.push({ ...entry, date, amount, isRefund: true })
-//     }
-//   }
+  // generate bills data from it. We can multiple bills associated to one file
+  const bills = []
+  for (let i = 0; i < dateLines.length; i++) {
+    const date = parse(dateLines[i].slice(1, 2).pop(), 'dd/MM/yyyy', new Date())
+    const amount = parseFloat(
+      amountLines[i]
+        .slice(1, 2)
+        .pop()
+        .replace(',', '.')
+    )
+    if (date && amount) {
+      bills.push({ ...entry, date, amount, isRefund: true })
+    }
+  }
 
-//   if (bills.length === 0) {
-//     // first bills is associated to the current entry
-//     entry.__ignore = true
-//     log('warn', 'could not find any date or amount in this document')
-//   } else {
-//     // next bills will generate a new entry associated to the same file
-//     Object.assign(entry, bills.shift())
-//     return bills
-//   }
+  if (bills.length === 0) {
+    // first bills is associated to the current entry
+    entry.__ignore = true
+    log('warn', 'could not find any date or amount in this document')
+  } else {
+    // next bills will generate a new entry associated to the same file
+    Object.assign(entry, bills.shift())
+    return bills
+  }
 
-//   return entry
-// }
+  return entry
+}
