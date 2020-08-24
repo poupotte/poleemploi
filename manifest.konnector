@@ -20,14 +20,13 @@
     },
     "zipcode": {
       "type": "text"
-    },
-    "advancedFields": {
-      "folderPath": {
-        "advanced": true,
-        "isRequired": false
-      }
     }
   },
+  "folders": [
+    {
+      "defaultDir": "$administrative/$konnector/$account"
+    }
+  ],
   "time_interval": [
     0,
     24
@@ -98,5 +97,8 @@
     }
   },
   "banksTransactionRegExp": "\\bpole emploi\\b",
+  "features": [
+    "METADATA_DEDUP"
+  ],
   "manifest_version": "2"
 }
