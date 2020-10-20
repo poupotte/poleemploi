@@ -58,7 +58,7 @@
     "fr": {
       "fields": {
         "zipcode": {
-          "label": "Code Postal (optionnel)"
+          "label": "Code Postal"
         }
       },
       "short_description": "Récupère vos correspondances Pôle Emploi et votre dernier avis de situation Pôle Emploi",
@@ -91,7 +91,7 @@
       },
       "fields": {
         "zipcode": {
-          "label": "Zip code (optional)"
+          "label": "Zip code"
         }
       }
     }
